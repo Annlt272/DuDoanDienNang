@@ -94,7 +94,7 @@ pyparsing==3.2.3
 python-dateutil==2.9.0.post0
 python-multipart==0.0.20
 pytz==2025.2
-pywin32==310
+
 PyYAML==6.0.2
 pyzmq==26.4.0
 referencing==0.36.2
@@ -131,7 +131,7 @@ tokenizers==0.13.3
 toml==0.10.2
 tomlkit==0.13.2
 torch==2.7.1
-torchaudio==2.5.1+cu121
+
 torchvision==0.22.1
 tornado==6.5
 tqdm==4.67.1
