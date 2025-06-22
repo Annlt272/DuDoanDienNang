@@ -25,7 +25,6 @@ SEQ_LEN = 48        # 1 ngày quan sát
 # --- Mô hình LSTM ---
 class LSTMModel(nn.Module):
     def __init__(self, input_size=1, hidden_dim=64, output_dim=24):
-    def __init__(self, input_size=1, hidden_dim=64, output_dim=24):
         super().__init__()
         self.lstm = nn.LSTM(input_size, hidden_dim, batch_first=True)
         self.dropout = nn.Dropout(0.2)
@@ -48,20 +47,11 @@ def clean_long_zero_sequences(series, threshold=6):
 
 @st.cache_data(show_spinner=False)
 def load_full_data(path):
-    # Chỉ đọc những cột cần thiết
-    use_cols = ["LCLid", "DateTime", "KWH/hh (per half hour)"]
-    chunks = pd.read_csv(path, sep=';', usecols=use_cols, engine="c", chunksize=95_000, on_bad_lines='skip')
-    # Chỉ đọc những cột cần thiết
     use_cols = ["LCLid", "DateTime", "KWH/hh (per half hour)"]
     chunks = pd.read_csv(path, sep=';', usecols=use_cols, engine="c", chunksize=95_000, on_bad_lines='skip')
     df_list = []
     for chunk in chunks:
         chunk.columns = chunk.columns.str.strip()
-        chunk["KWH/hh (per half hour)"] = pd.to_numeric(
-            chunk["KWH/hh (per half hour)"].astype(str).str.replace(",", "."), errors='coerce')
-        chunk["DateTime"] = pd.to_datetime(chunk["DateTime"], dayfirst=True, errors='coerce')
-        chunk.dropna(subset=["LCLid", "DateTime", "KWH/hh (per half hour)"], inplace=True)
-        chunk = chunk[(chunk["DateTime"] >= DATE_MIN) & (chunk["DateTime"] <= DATE_MAX)]
         chunk["KWH/hh (per half hour)"] = pd.to_numeric(
             chunk["KWH/hh (per half hour)"].astype(str).str.replace(",", "."), errors='coerce')
         chunk["DateTime"] = pd.to_datetime(chunk["DateTime"], dayfirst=True, errors='coerce')
@@ -73,16 +63,11 @@ def load_full_data(path):
     del df_list
     gc.collect()
     return df
-    del df_list
-    gc.collect()
-    return df
-
 
 @st.cache_data(show_spinner=False)
 def load_available_households(df):
     return sorted(df["LCLid"].unique())
 
-# --- Xử lý dữ liệu hộ ---
 def get_household_data(df, household_id, start_date, end_date):
     df_house = df[df["LCLid"] == household_id]
     df_house = df_house[(df_house.index >= pd.to_datetime(start_date)) & (df_house.index <= pd.to_datetime(end_date))]
@@ -92,25 +77,14 @@ def get_household_data(df, household_id, start_date, end_date):
     ts = ts[ts >= 0]
     ts = clean_long_zero_sequences(ts)
     ts = ts.clip(upper=ts.quantile(0.995))
-    ts = ts[ts >= 0]
-    ts = clean_long_zero_sequences(ts)
-    ts = ts.clip(upper=ts.quantile(0.995))
     return ts
 
-# --- Chuẩn bị chuỗi đầu vào ---
-def prepare_sequence(series):
 def prepare_sequence(series):
     values = series.values.reshape(-1, 1)
     if len(values) < SEQ_LEN:
         return None
     return values[-SEQ_LEN:]
-    if len(values) < SEQ_LEN:
-        return None
-    return values[-SEQ_LEN:]
 
-# --- Load mô hình + scaler ---
-def load_model_and_scaler(household_id):
-    folder_name = f"{household_id}_12h"
 def load_model_and_scaler(household_id):
     folder_name = f"{household_id}_12h"
     folder_path = os.path.join(MODEL_DIR, folder_name)
@@ -121,26 +95,19 @@ def load_model_and_scaler(household_id):
         return None, None
 
     model = LSTMModel(output_dim=FORECAST_STEPS).to(device)
-    model = LSTMModel(output_dim=FORECAST_STEPS).to(device)
     model.load_state_dict(torch.load(model_path, map_location=device))
     model.eval()
     scaler = joblib.load(scaler_path)
 
     return model, scaler
 
-# --- Dự báo ---
-def forecast_multi_step(model, input_seq, scaler):
 def forecast_multi_step(model, input_seq, scaler):
     scaled = scaler.transform(input_seq)
-    input_tensor = torch.tensor(scaled.reshape(1, SEQ_LEN, 1), dtype=torch.float32).to(device)
     input_tensor = torch.tensor(scaled.reshape(1, SEQ_LEN, 1), dtype=torch.float32).to(device)
     with torch.no_grad():
         output = model(input_tensor).cpu().numpy().reshape(-1, 1)
     return scaler.inverse_transform(output).flatten()
 
-# --- Giao diện chính ---
-st.set_page_config(page_title="Dự báo điện năng 12 giờ", layout="wide")
-st.title("🔋 DỰ BÁO ĐIỆN NĂNG TIÊU THỤ ")
 # --- Giao diện chính ---
 st.set_page_config(page_title="Dự báo điện năng 12 giờ", layout="wide")
 st.title("🔋 DỰ BÁO ĐIỆN NĂNG TIÊU THỤ ")
@@ -159,37 +126,29 @@ if start_date > end_date:
     st.stop()
 
 if st.button("Dự báo 12 giờ tiếp theo"):
-if st.button("Dự báo 12 giờ tiếp theo"):
     if not selected_households:
         st.warning("Vui lòng chọn ít nhất 1 hộ.")
         st.stop()
 
     for hid in selected_households:
         st.subheader(f"Hộ: {hid}")
-        st.subheader(f"Hộ: {hid}")
         start = time.time()
 
         ts = get_household_data(full_df, hid, start_date, end_date)
         if ts is None or len(ts) < SEQ_LEN:
             st.warning("Không đủ dữ liệu để dự báo.")
-        if ts is None or len(ts) < SEQ_LEN:
-            st.warning("Không đủ dữ liệu để dự báo.")
             continue
 
-        input_seq = prepare_sequence(ts)
         input_seq = prepare_sequence(ts)
         if input_seq is None:
             st.warning("Chuỗi đầu vào không hợp lệ.")
             continue
 
         model, scaler = load_model_and_scaler(hid)
-        model, scaler = load_model_and_scaler(hid)
         if model is None or scaler is None:
-            st.warning("Không tìm thấy mô hình đã huấn luyện.")
             st.warning("Không tìm thấy mô hình đã huấn luyện.")
             continue
 
-        preds = forecast_multi_step(model, input_seq, scaler)
         preds = forecast_multi_step(model, input_seq, scaler)
         future_index = [ts.index[-1] + timedelta(minutes=30 * (i + 1)) for i in range(len(preds))]
 
