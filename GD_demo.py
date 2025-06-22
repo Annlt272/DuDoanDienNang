@@ -40,7 +40,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # ======================= MODEL DEFINITION =======================
 FORECAST_STEPS = 10  # 5 giờ tiếp theo
-SEQ_LEN = 48        # 1 ngày quan sát
+SEQ_LEN = 10        # 1 ngày quan sát
 
 class LSTMModel(nn.Module):
     def __init__(self, input_size=1, hidden_dim=64, output_dim=24):
