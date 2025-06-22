@@ -45,27 +45,26 @@ def clean_long_zero_sequences(series, threshold=6):
     series_cleaned[to_nan] = np.nan
     return series_cleaned.interpolate(method="linear").ffill().bfill()
 
-# --- Load dữ liệu ---
 @st.cache_data(show_spinner=False)
 def load_full_data(path):
-    chunks = pd.read_csv(path, sep=';', engine="c", chunksize=95_000, on_bad_lines='skip')
+    # Chỉ đọc những cột cần thiết
+    use_cols = ["LCLid", "DateTime", "KWH/hh (per half hour)"]
+    chunks = pd.read_csv(path, sep=';', usecols=use_cols, engine="c", chunksize=95_000, on_bad_lines='skip')
     df_list = []
     for chunk in chunks:
         chunk.columns = chunk.columns.str.strip()
-        if "KWH/hh (per half hour)" in chunk.columns:
-            chunk["KWH/hh (per half hour)"] = pd.to_numeric(
-                chunk["KWH/hh (per half hour)"].astype(str).str.replace(",", "."), errors='coerce')
+        chunk["KWH/hh (per half hour)"] = pd.to_numeric(
+            chunk["KWH/hh (per half hour)"].astype(str).str.replace(",", "."), errors='coerce')
+        chunk["DateTime"] = pd.to_datetime(chunk["DateTime"], dayfirst=True, errors='coerce')
+        chunk.dropna(subset=["LCLid", "DateTime", "KWH/hh (per half hour)"], inplace=True)
+        chunk = chunk[(chunk["DateTime"] >= DATE_MIN) & (chunk["DateTime"] <= DATE_MAX)]
         df_list.append(chunk)
     df = pd.concat(df_list, ignore_index=True)
-    del df_list, chunks
-    gc.collect()
-
-    df.dropna(subset=["LCLid", "stdorToU", "DateTime", "KWH/hh (per half hour)"], inplace=True)
-    df["DateTime"] = pd.to_datetime(df["DateTime"], dayfirst=True, errors='coerce')
-    df.dropna(subset=["DateTime"], inplace=True)
     df.set_index("DateTime", inplace=True)
+    del df_list
+    gc.collect()
+    return df
 
-    return df[(df.index >= DATE_MIN) & (df.index <= DATE_MAX)]
 
 @st.cache_data(show_spinner=False)
 def load_available_households(df):
