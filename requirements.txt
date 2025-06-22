@@ -37,3 +37,4 @@ pydub==0.25.1
 
 # Optional: file uploads
 aiofiles==23.2.1
+torch>=2.0.0
