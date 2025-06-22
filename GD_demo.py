@@ -9,20 +9,37 @@ import os
 import gc
 import time
 import joblib
+import gdown
+import zipfile
 
-# --- Cấu hình ---
-DATA_PATH = "Data1.csv"
+# ======================= DOWNLOAD DATA FROM GOOGLE DRIVE =======================
+
+# File CSV
+if not os.path.exists("DataSample.csv"):
+    file_id = "1JTKRdO-24v4oUQXyPhRYGtlX8b1yaCZ5"  # <-- Thay ID đúng file CSV của bạn
+    url = f"https://drive.google.com/uc?id={file_id}"
+    gdown.download(url, "DataSample.csv", quiet=False)
+
+# Folder models (ở đây giả sử bạn đã nén models thành file models.zip)
+if not os.path.exists("models"):
+    file_id = "1N7lQzaeyT1mDiaSe_pizvNgwTO4UAxlt"  # <-- Thay ID đúng file models.zip của bạn
+    url = f"https://drive.google.com/uc?id={file_id}"
+    gdown.download(url, "models.zip", quiet=False)
+    with zipfile.ZipFile("models.zip", 'r') as zip_ref:
+        zip_ref.extractall(".")
+
+# ======================= CONFIGURATION =======================
+DATA_PATH = "DataSample.csv"
 MODEL_DIR = "models"
 MAX_HOUSEHOLDS = 5
 DATE_MIN = datetime(2011, 12, 1)
 DATE_MAX = datetime(2014, 2, 28)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# --- Tham số cố định theo model mới ---
+# ======================= MODEL DEFINITION =======================
 FORECAST_STEPS = 10  # 5 giờ tiếp theo
 SEQ_LEN = 48        # 1 ngày quan sát
 
-# --- Mô hình LSTM ---
 class LSTMModel(nn.Module):
     def __init__(self, input_size=1, hidden_dim=64, output_dim=24):
         super().__init__()
@@ -35,7 +52,7 @@ class LSTMModel(nn.Module):
         x = self.dropout(x[:, -1, :])
         return self.fc(x)
 
-# --- Xử lý chuỗi 0 dài ---
+# ======================= DATA PREPROCESSING =======================
 def clean_long_zero_sequences(series, threshold=6):
     zero_mask = (series == 0)
     group = (zero_mask != zero_mask.shift()).cumsum()
@@ -108,7 +125,7 @@ def forecast_multi_step(model, input_seq, scaler):
         output = model(input_tensor).cpu().numpy().reshape(-1, 1)
     return scaler.inverse_transform(output).flatten()
 
-# --- Giao diện chính ---
+# ======================= STREAMLIT APP =======================
 st.set_page_config(page_title="Dự báo điện năng 12 giờ", layout="wide")
 st.title("🔋 DỰ BÁO ĐIỆN NĂNG TIÊU THỤ ")
 
