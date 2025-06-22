@@ -11,7 +11,7 @@ import time
 import joblib
 
 # --- Cấu hình ---
-DATA_PATH = "E:\\Demo\\TIMESERIES\\Data1.csv"
+DATA_PATH = "Data1.csv"
 MODEL_DIR = "models"
 MAX_HOUSEHOLDS = 5
 DATE_MIN = datetime(2011, 12, 1)
