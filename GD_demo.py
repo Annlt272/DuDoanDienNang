@@ -20,13 +20,15 @@ if not os.path.exists("DataSample.csv"):
     url = f"https://drive.google.com/uc?id={file_id}"
     gdown.download(url, "DataSample.csv", quiet=False)
 
-# Folder models (ở đây giả sử bạn đã nén models thành file models.zip)
-if not os.path.exists("models"):
-    file_id = "1N7lQzaeyT1mDiaSe_pizvNgwTO4UAxlt"  # <-- Thay ID đúng file models.zip của bạn
-    url = f"https://drive.google.com/uc?id={file_id}"
-    gdown.download(url, "models.zip", quiet=False)
+
+
+# models.zip
+if not os.path.exists("models.zip"):
+    file_id = "1N7lQzaeyT1mDiaSe_pizvNgwTO4UAxlt"
+    gdown.download(id=file_id, output="models.zip", quiet=False)
     with zipfile.ZipFile("models.zip", 'r') as zip_ref:
         zip_ref.extractall(".")
+
 
 # ======================= CONFIGURATION =======================
 DATA_PATH = "DataSample.csv"
