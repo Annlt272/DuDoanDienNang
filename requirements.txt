@@ -17,8 +17,10 @@ joblib==1.4.2
 altair==5.3.0
 pydeck==0.9.1
 
-# NLP (if needed)
+
 sentence-transformers==2.2.2
+sentencepiece>=0.2.0
+
 transformers==4.41.1
 nltk==3.8.1
 
