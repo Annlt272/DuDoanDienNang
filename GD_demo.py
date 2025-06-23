@@ -64,7 +64,7 @@ def clean_long_zero_sequences(series, threshold=6):
 def load_full_data(path):
     use_cols = ["LCLid", "stdorToU", "DateTime", "KWH/hh (per half hour)"]
 
-    chunks = pd.read_csv(path, sep=';', usecols=use_cols, engine="c", chunksize=95000, on_bad_lines='skip')
+    chunks = pd.read_csv(path, sep=',', usecols=use_cols, engine="c", chunksize=95000, on_bad_lines='skip')
     df_list = []
     for chunk in chunks:
         chunk.columns = chunk.columns.str.strip()
