@@ -137,45 +137,40 @@ if st.button("Dự báo ngày tiếp theo"):
         st.warning("Vui lòng chọn ít nhất 1 hộ.")
         st.stop()
 
-    for hid in selected_households:
-        st.subheader(f"Hộ: {hid}")
-        start = time.time()
+    # Phần dự báo bên trong vòng lặp for:
 
-        ts = get_household_data(full_df, hid, start_date, end_date)
-        if ts is None or len(ts) < SEQ_LEN:
-            st.warning("Không đủ dữ liệu để dự báo.")
-            continue
+for hid in selected_households:
+    st.subheader(f"Hộ: {hid}")
+    start = time.time()
 
-        input_seq = prepare_sequence(ts)
-        if input_seq is None:
-            st.warning("Chuỗi đầu vào không hợp lệ.")
-            continue
+    ts = get_household_data(full_df, hid, start_date, end_date)
+    if ts is None or len(ts) < SEQ_LEN:
+        st.warning("Không đủ dữ liệu để dự báo.")
+        continue
 
-        # Load model
-        if hid not in all_models:
-            st.warning("Không tìm thấy mô hình đã huấn luyện.")
-            continue
+    input_seq = prepare_sequence(ts)
+    if input_seq is None:
+        st.warning("Chuỗi đầu vào không hợp lệ.")
+        continue
 
-        model = LSTMModel().to(device)
-        model.load_state_dict(all_models[hid])
-        model.eval()
+    # Load model
+    if hid not in all_models:
+        st.warning("Không tìm thấy mô hình đã huấn luyện.")
+        continue
 
-        # Load scaler
-        scaler_path = os.path.join(MODEL_DIR, "scaler", f"{hid}_scaler.save")
-        if not os.path.exists(scaler_path):
-            st.warning("Không tìm thấy scaler.")
-            continue
-        scaler = joblib.load(scaler_path)
+    model = LSTMModel().to(device)
+    model.load_state_dict(all_models[hid])
+    model.eval()
 
-        # Dự báo
-        scaled = scaler.transform(input_seq)
-        input_tensor = torch.tensor(scaled.reshape(1, SEQ_LEN, 1), dtype=torch.float32).to(device)
-        with torch.no_grad():
-            output = model(input_tensor).cpu().numpy().reshape(-1, 1)
-        preds = scaler.inverse_transform(output).flatten()
+    # Dự báo (không cần scaler)
+    input_tensor = torch.tensor(input_seq.reshape(1, SEQ_LEN, 1), dtype=torch.float32).to(device)
+    with torch.no_grad():
+        output = model(input_tensor).cpu().numpy().reshape(-1, 1)
+    preds = output.flatten()
 
-        future_index = [ts.index[-1] + timedelta(minutes=30 * (i + 1)) for i in range(len(preds))]
-        forecast_df = pd.DataFrame({"Thời gian": future_index, "Dự báo (kWh)": preds}).set_index("Thời gian")
-        st.line_chart(forecast_df)
-        end = time.time()
-        st.success(f"Dự báo hoàn thành trong {end - start:.2f} giây.")
+    future_index = [ts.index[-1] + timedelta(minutes=30 * (i + 1)) for i in range(len(preds))]
+    forecast_df = pd.DataFrame({"Thời gian": future_index, "Dự báo (kWh)": preds}).set_index("Thời gian")
+    st.line_chart(forecast_df)
+    end = time.time()
+    st.success(f"Dự báo hoàn thành trong {end - start:.2f} giây.")
+
