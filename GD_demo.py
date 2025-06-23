@@ -60,11 +60,13 @@ def clean_long_zero_sequences(series, threshold=6):
 
 @st.cache_data(show_spinner=False)
 def load_full_data(path):
-    use_cols = ["LCLid", "stdorToU", "DateTime", "KWH/hh (per half hour)"]
-    chunks = pd.read_csv(path, sep=',', usecols=use_cols, engine="python", chunksize=95000, on_bad_lines='skip')
+    chunks = pd.read_csv(path, sep=',', engine="python", chunksize=95000, on_bad_lines='skip')
     df_list = []
     for chunk in chunks:
         chunk.columns = chunk.columns.str.strip()
+        if not set(["LCLid", "stdorToU", "DateTime", "KWH/hh (per half hour)"]).issubset(chunk.columns):
+            continue  # Bỏ qua chunk nếu thiếu cột
+        chunk = chunk[["LCLid", "stdorToU", "DateTime", "KWH/hh (per half hour)"]]
         chunk["KWH/hh (per half hour)"] = pd.to_numeric(
             chunk["KWH/hh (per half hour)"].astype(str).str.replace(",", "."), errors='coerce')
         chunk["DateTime"] = pd.to_datetime(chunk["DateTime"], dayfirst=True, errors='coerce')
