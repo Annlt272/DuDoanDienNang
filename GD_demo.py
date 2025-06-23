@@ -14,33 +14,30 @@ import zipfile
 
 # ======================= DOWNLOAD DATA FROM GOOGLE DRIVE =======================
 
-# File CSV
-if not os.path.exists("DataSample.csv"):
-    file_id = "1JTKRdO-24v4oUQXyPhRYGtlX8b1yaCZ5"  # <-- Thay ID đúng file CSV của bạn
+# Download data zip
+if not os.path.exists("datafull.zip"):
+    file_id = "1JTKRdO-24v4oUQXyPhRYGtlX8b1yaCZ5"
     url = f"https://drive.google.com/uc?id={file_id}"
-    gdown.download(url, "DataSample.csv", quiet=False)
+    gdown.download(url, "datafull.zip", quiet=False)
 
-
-
-# models.zip
-if not os.path.exists("models.zip"):
-    file_id = "1N7lQzaeyT1mDiaSe_pizvNgwTO4UAxlt"
-    gdown.download(id=file_id, output="models.zip", quiet=False)
-    with zipfile.ZipFile("models.zip", 'r') as zip_ref:
-        zip_ref.extractall(".")
-
+# Download model zip
+if not os.path.exists("model.zip"):
+    file_id = "1ZuC_LHycA0gcAHJ5D6XB8yLzT8ouNT87"
+    gdown.download(id=file_id, output="model.zip", quiet=False)
+    with zipfile.ZipFile("model.zip", 'r') as zip_ref:
+        zip_ref.extractall("model")  # giải nén vào thư mục model
 
 # ======================= CONFIGURATION =======================
 DATA_PATH = "DataSample.csv"
-MODEL_DIR = "models"
+MODEL_DIR = "model"
 MAX_HOUSEHOLDS = 5
 DATE_MIN = datetime(2011, 12, 1)
 DATE_MAX = datetime(2014, 2, 28)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # ======================= MODEL DEFINITION =======================
-FORECAST_STEPS = 10  # 5 giờ tiếp theo
-SEQ_LEN = 10        # 1 ngày quan sát
+FORECAST_STEPS = 1  # 1 ngày tiếp theo
+SEQ_LEN = 336        # 7 ngày quan sát
 
 class LSTMModel(nn.Module):
     def __init__(self, input_size=1, hidden_dim=64, output_dim=24):
@@ -104,28 +101,19 @@ def prepare_sequence(series):
         return None
     return values[-SEQ_LEN:]
 
-def load_model_and_scaler(household_id):
-    folder_name = f"{household_id}_12h"
-    folder_path = os.path.join(MODEL_DIR, folder_name)
-    model_path = os.path.join(folder_path, "final_model.pt")
-    scaler_path = os.path.join(folder_path, "scaler.save")
+# ======================= LOAD MODELS FROM MULTI-PT =======================
+@st.cache_data(show_spinner=False)
+def load_all_models():
+    model_files = [f for f in os.listdir(MODEL_DIR) if f.endswith(".pt")]
+    full_model_dict = {}
+    for file in model_files:
+        file_path = os.path.join(MODEL_DIR, file)
+        state_dict_all = torch.load(file_path, map_location=device)
+        for hid, state_dict in state_dict_all.items():
+            full_model_dict[hid] = state_dict
+    return full_model_dict
 
-    if not os.path.exists(model_path) or not os.path.exists(scaler_path):
-        return None, None
-
-    model = LSTMModel(output_dim=FORECAST_STEPS).to(device)
-    model.load_state_dict(torch.load(model_path, map_location=device))
-    model.eval()
-    scaler = joblib.load(scaler_path)
-
-    return model, scaler
-
-def forecast_multi_step(model, input_seq, scaler):
-    scaled = scaler.transform(input_seq)
-    input_tensor = torch.tensor(scaled.reshape(1, SEQ_LEN, 1), dtype=torch.float32).to(device)
-    with torch.no_grad():
-        output = model(input_tensor).cpu().numpy().reshape(-1, 1)
-    return scaler.inverse_transform(output).flatten()
+all_models = load_all_models()
 
 # ======================= STREAMLIT APP =======================
 st.set_page_config(page_title="Dự báo điện năng 12 giờ", layout="wide")
@@ -144,7 +132,7 @@ if start_date > end_date:
     st.warning("❗ Ngày bắt đầu phải trước ngày kết thúc.")
     st.stop()
 
-if st.button("Dự báo 12 giờ tiếp theo"):
+if st.button("Dự báo ngày tiếp theo"):
     if not selected_households:
         st.warning("Vui lòng chọn ít nhất 1 hộ.")
         st.stop()
@@ -163,19 +151,31 @@ if st.button("Dự báo 12 giờ tiếp theo"):
             st.warning("Chuỗi đầu vào không hợp lệ.")
             continue
 
-        model, scaler = load_model_and_scaler(hid)
-        if model is None or scaler is None:
+        # Load model cho đúng household id
+        if hid not in all_models:
             st.warning("Không tìm thấy mô hình đã huấn luyện.")
             continue
 
-        preds = forecast_multi_step(model, input_seq, scaler)
+        model = LSTMModel(output_dim=FORECAST_STEPS).to(device)
+        model.load_state_dict(all_models[hid])
+        model.eval()
+
+        # Load scaler
+        scaler_path = os.path.join(MODEL_DIR, "scaler", f"{hid}_scaler.save")
+        if not os.path.exists(scaler_path):
+            st.warning("Không tìm thấy scaler.")
+            continue
+        scaler = joblib.load(scaler_path)
+
+        # Dự báo
+        scaled = scaler.transform(input_seq)
+        input_tensor = torch.tensor(scaled.reshape(1, SEQ_LEN, 1), dtype=torch.float32).to(device)
+        with torch.no_grad():
+            output = model(input_tensor).cpu().numpy().reshape(-1, 1)
+        preds = scaler.inverse_transform(output).flatten()
+
         future_index = [ts.index[-1] + timedelta(minutes=30 * (i + 1)) for i in range(len(preds))]
-
-        forecast_df = pd.DataFrame({
-            "Thời gian": future_index,
-            "Dự báo (kWh)": preds
-        }).set_index("Thời gian")
-
+        forecast_df = pd.DataFrame({"Thời gian": future_index, "Dự báo (kWh)": preds}).set_index("Thời gian")
         st.line_chart(forecast_df)
         end = time.time()
         st.success(f"Dự báo hoàn thành trong {end - start:.2f} giây.")
