@@ -66,7 +66,7 @@ def clean_long_zero_sequences(series, threshold=6):
 
 @st.cache_data(show_spinner=False)
 def load_full_data(path):
-    use_cols = ["LCLid", "DateTime", "KWH/hh (per half hour)"]
+    use_cols = ["LCLid", "stdorToU", "DateTime", "KWH/hh (per half hour)"]
     chunks = pd.read_csv(path, sep=';', usecols=use_cols, engine="c", chunksize=95_000, on_bad_lines='skip')
     df_list = []
     for chunk in chunks:
