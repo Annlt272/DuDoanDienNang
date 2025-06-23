@@ -15,24 +15,25 @@ import zipfile
 # ======================= DOWNLOAD DATA FROM GOOGLE DRIVE =======================
 
 # Download data zip
-if not os.path.exists("datafull.zip"):
+if not os.path.exists("CC_LCL-FullData.csv"):
     file_id = "1Y1p7wgYf6IY2303b5IxpkOcOGkYkmacM"
     url = f"https://drive.google.com/uc?id={file_id}&confirm=t"
     gdown.download(url, "datafull.zip", quiet=False)
     with zipfile.ZipFile("datafull.zip", 'r') as zip_ref:
         zip_ref.extractall(".")
 
-
 # Download model zip
-if not os.path.exists("model.zip"):
+if not os.path.exists("model"):
     file_id = "1ZuC_LHycA0gcAHJ5D6XB8yLzT8ouNT87"
-    gdown.download(id=file_id, output="model.zip", quiet=False)
+    url = f"https://drive.google.com/uc?id={file_id}&confirm=t"
+    gdown.download(url, "model.zip", quiet=False)
     with zipfile.ZipFile("model.zip", 'r') as zip_ref:
-        zip_ref.extractall("model")  # giải nén vào thư mục model
+        zip_ref.extractall("model")
 
 # ======================= CONFIGURATION =======================
 DATA_PATH = "CC_LCL-FullData.csv"
 MODEL_DIR = "model"
+SCALER_DIR = os.path.join(MODEL_DIR, "scaler")
 MAX_HOUSEHOLDS = 5
 DATE_MIN = datetime(2011, 12, 1)
 DATE_MAX = datetime(2014, 2, 28)
@@ -43,7 +44,7 @@ FORECAST_STEPS = 48  # 1 ngày tiếp theo
 SEQ_LEN = 336        # 7 ngày quan sát
 
 class LSTMModel(nn.Module):
-    def __init__(self, input_size=1, hidden_dim=64, output_dim=24):
+    def __init__(self, input_size=1, hidden_dim=64, output_dim=FORECAST_STEPS):
         super().__init__()
         self.lstm = nn.LSTM(input_size, hidden_dim, batch_first=True)
         self.dropout = nn.Dropout(0.2)
@@ -67,7 +68,7 @@ def clean_long_zero_sequences(series, threshold=6):
 @st.cache_data(show_spinner=False)
 def load_full_data(path):
     use_cols = ["LCLid", "DateTime", "KWH/hh (per half hour)"]
-    chunks = pd.read_csv(path, sep=';', usecols=use_cols, engine="c", chunksize=95_000, on_bad_lines='skip')
+    chunks = pd.read_csv(path, sep=';', usecols=use_cols, engine="c", chunksize=95000, on_bad_lines='skip')
     df_list = []
     for chunk in chunks:
         chunk.columns = chunk.columns.str.strip()
@@ -104,7 +105,7 @@ def prepare_sequence(series):
         return None
     return values[-SEQ_LEN:]
 
-# ======================= LOAD MODELS FROM MULTI-PT =======================
+# ======================= LOAD ALL MODELS =======================
 @st.cache_data(show_spinner=False)
 def load_all_models():
     model_files = [f for f in os.listdir(MODEL_DIR) if f.endswith(".pt")]
@@ -119,15 +120,14 @@ def load_all_models():
 all_models = load_all_models()
 
 # ======================= STREAMLIT APP =======================
-st.set_page_config(page_title="Dự báo điện năng 12 giờ", layout="wide")
-st.title("🔋 DỰ BÁO ĐIỆN NĂNG TIÊU THỤ ")
+st.set_page_config(page_title="Dự báo điện năng", layout="wide")
+st.title("🔋 DỰ BÁO ĐIỆN NĂNG TIÊU THỤ")
 
 with st.spinner("📦 Đang tải dữ liệu..."):
     full_df = load_full_data(DATA_PATH)
     households = load_available_households(full_df)
 
 selected_households = st.multiselect("Chọn hộ gia đình", households, max_selections=MAX_HOUSEHOLDS)
-
 start_date = st.date_input("Từ ngày", datetime(2011, 12, 1), min_value=DATE_MIN, max_value=DATE_MAX)
 end_date = st.date_input("Đến ngày", datetime(2014, 2, 28), min_value=DATE_MIN, max_value=DATE_MAX)
 
@@ -154,17 +154,17 @@ if st.button("Dự báo ngày tiếp theo"):
             st.warning("Chuỗi đầu vào không hợp lệ.")
             continue
 
-        # Load model cho đúng household id
+        # Load model
         if hid not in all_models:
             st.warning("Không tìm thấy mô hình đã huấn luyện.")
             continue
 
-        model = LSTMModel(output_dim=FORECAST_STEPS).to(device)
+        model = LSTMModel().to(device)
         model.load_state_dict(all_models[hid])
         model.eval()
 
         # Load scaler
-        scaler_path = os.path.join(MODEL_DIR, "scaler", f"{hid}_scaler.save")
+        scaler_path = os.path.join(SCALER_DIR, f"{hid}_scaler.save")
         if not os.path.exists(scaler_path):
             st.warning("Không tìm thấy scaler.")
             continue
