@@ -4,7 +4,6 @@ import numpy as np
 from datetime import datetime, timedelta
 import torch
 from torch import nn
-from sklearn.preprocessing import StandardScaler
 import os
 import gc
 import time
@@ -15,31 +14,25 @@ import zipfile
 # ======================= DOWNLOAD DATA FROM GOOGLE DRIVE =======================
 
 # Download data zip
-if not os.path.exists("CC_LCL-FullData.csv"):
-    file_id = "1Y1p7wgYf6IY2303b5IxpkOcOGkYkmacM"
+if not os.path.exists("datafull.zip"):
+    file_id = "1Y1p7wgYf6IY2303b5IxpkOcOGkYkmacM"  # <-- ID file datafull.zip của bạn
     url = f"https://drive.google.com/uc?id={file_id}&confirm=t"
     gdown.download(url, "datafull.zip", quiet=False)
     with zipfile.ZipFile("datafull.zip", 'r') as zip_ref:
         zip_ref.extractall(".")
-        extracted_files = zip_ref.namelist()
-        print(f"Extracted files: {extracted_files}")
-
 
 # Download model zip
 if not os.path.exists("model"):
-    file_id = "1ZuC_LHycA0gcAHJ5D6XB8yLzT8ouNT87"
-    url = f"https://drive.google.com/uc?id={file_id}&confirm=t"
-    gdown.download(url, "model.zip", quiet=False)
-    with zipfile.ZipFile("model.zip", 'r') as zip_ref:
-        zip_ref.extractall(".")
-        extracted_files = zip_ref.namelist()
-        print(f"Extracted files: {extracted_files}")
+    os.makedirs("model")
 
+file_id = "1ZuC_LHycA0gcAHJ5D6XB8yLzT8ouNT87"  # <-- ID file model.zip của bạn
+gdown.download(id=file_id, output="model.zip", quiet=False)
+with zipfile.ZipFile("model.zip", 'r') as zip_ref:
+    zip_ref.extractall("model")  # giải nén thẳng vào thư mục model
 
 # ======================= CONFIGURATION =======================
 DATA_PATH = "CC_LCL-FullData.csv"
 MODEL_DIR = "model"
-SCALER_DIR = os.path.join(MODEL_DIR, "scaler")
 MAX_HOUSEHOLDS = 5
 DATE_MIN = datetime(2011, 12, 1)
 DATE_MAX = datetime(2014, 2, 28)
@@ -50,7 +43,7 @@ FORECAST_STEPS = 48  # 1 ngày tiếp theo
 SEQ_LEN = 336        # 7 ngày quan sát
 
 class LSTMModel(nn.Module):
-    def __init__(self, input_size=1, hidden_dim=64, output_dim=FORECAST_STEPS):
+    def __init__(self, input_size=1, hidden_dim=64, output_dim=24):
         super().__init__()
         self.lstm = nn.LSTM(input_size, hidden_dim, batch_first=True)
         self.dropout = nn.Dropout(0.2)
@@ -74,7 +67,7 @@ def clean_long_zero_sequences(series, threshold=6):
 @st.cache_data(show_spinner=False)
 def load_full_data(path):
     use_cols = ["LCLid", "DateTime", "KWH/hh (per half hour)"]
-    chunks = pd.read_csv(path, sep=';', usecols=use_cols, engine="c", chunksize=95000, on_bad_lines='skip')
+    chunks = pd.read_csv(path, sep=';', usecols=use_cols, engine="c", chunksize=95_000, on_bad_lines='skip')
     df_list = []
     for chunk in chunks:
         chunk.columns = chunk.columns.str.strip()
@@ -111,7 +104,7 @@ def prepare_sequence(series):
         return None
     return values[-SEQ_LEN:]
 
-# ======================= LOAD ALL MODELS =======================
+# ======================= LOAD MODELS FROM MULTI-PT =======================
 @st.cache_data(show_spinner=False)
 def load_all_models():
     model_files = [f for f in os.listdir(MODEL_DIR) if f.endswith(".pt")]
@@ -160,29 +153,27 @@ if st.button("Dự báo ngày tiếp theo"):
             st.warning("Chuỗi đầu vào không hợp lệ.")
             continue
 
-        # Load model
         if hid not in all_models:
             st.warning("Không tìm thấy mô hình đã huấn luyện.")
             continue
 
-        model = LSTMModel().to(device)
+        model = LSTMModel(output_dim=FORECAST_STEPS).to(device)
         model.load_state_dict(all_models[hid])
         model.eval()
 
-        # Load scaler
-        scaler_path = os.path.join(SCALER_DIR, f"{hid}_scaler.save")
+        scaler_path = os.path.join(MODEL_DIR, "scaler", f"{hid}_scaler.save")
         if not os.path.exists(scaler_path):
             st.warning("Không tìm thấy scaler.")
             continue
-        scaler = joblib.load(scaler_path)
 
-        # Dự báo
+        scaler = joblib.load(scaler_path)
         scaled = scaler.transform(input_seq)
         input_tensor = torch.tensor(scaled.reshape(1, SEQ_LEN, 1), dtype=torch.float32).to(device)
+
         with torch.no_grad():
             output = model(input_tensor).cpu().numpy().reshape(-1, 1)
-        preds = scaler.inverse_transform(output).flatten()
 
+        preds = scaler.inverse_transform(output).flatten()
         future_index = [ts.index[-1] + timedelta(minutes=30 * (i + 1)) for i in range(len(preds))]
         forecast_df = pd.DataFrame({"Thời gian": future_index, "Dự báo (kWh)": preds}).set_index("Thời gian")
         st.line_chart(forecast_df)
