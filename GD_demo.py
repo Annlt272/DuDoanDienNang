@@ -30,7 +30,8 @@ with zipfile.ZipFile("model.zip", 'r') as zip_ref:
 
 
 # ======================= CONFIGURATION =======================
-DATA_PATH = "CC_LCL-FullData.csv"
+DATA_PATH = DATA_PATH = "E:/Demo/datafull/CC_LCL-FullData.csv"
+
 MODEL_DIR = "model"
 MAX_HOUSEHOLDS = 5
 DATE_MIN = datetime(2011, 12, 1)
