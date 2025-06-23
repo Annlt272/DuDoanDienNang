@@ -17,8 +17,10 @@ import zipfile
 # Download data zip
 if not os.path.exists("datafull.zip"):
     file_id = "1Y1p7wgYf6IY2303b5IxpkOcOGkYkmacM"
-    url = f"https://drive.google.com/uc?id={file_id}"
+    url = f"https://drive.google.com/uc?id={file_id}&confirm=t"
     gdown.download(url, "datafull.zip", quiet=False)
+    with zipfile.ZipFile("datafull.zip", 'r') as zip_ref:
+        zip_ref.extractall(".")
 
 
 # Download model zip
