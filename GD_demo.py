@@ -21,6 +21,9 @@ if not os.path.exists("CC_LCL-FullData.csv"):
     gdown.download(url, "datafull.zip", quiet=False)
     with zipfile.ZipFile("datafull.zip", 'r') as zip_ref:
         zip_ref.extractall(".")
+        extracted_files = zip_ref.namelist()
+        print(f"Extracted files: {extracted_files}")
+
 
 # Download model zip
 if not os.path.exists("model"):
@@ -28,7 +31,10 @@ if not os.path.exists("model"):
     url = f"https://drive.google.com/uc?id={file_id}&confirm=t"
     gdown.download(url, "model.zip", quiet=False)
     with zipfile.ZipFile("model.zip", 'r') as zip_ref:
-        zip_ref.extractall("model")
+        zip_ref.extractall(".")
+        extracted_files = zip_ref.namelist()
+        print(f"Extracted files: {extracted_files}")
+
 
 # ======================= CONFIGURATION =======================
 DATA_PATH = "CC_LCL-FullData.csv"
