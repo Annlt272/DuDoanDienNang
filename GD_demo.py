@@ -21,8 +21,13 @@ if not os.path.exists("datafull.zip"):
 # Download model.zip
 if not os.path.exists("model.zip"):
     hf_hub_download(repo_id="An272/dudoandiennang", filename="model.zip", local_dir=".")
-    with zipfile.ZipFile("model.zip", 'r') as zip_ref:
-        zip_ref.extractall("model")
+
+if not os.path.exists("model"):
+    os.makedirs("model")
+
+with zipfile.ZipFile("model.zip", 'r') as zip_ref:
+    zip_ref.extractall("model")
+
 
 # ======================= CONFIGURATION =======================
 DATA_PATH = "CC_LCL-FullData.csv"
