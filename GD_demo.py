@@ -36,7 +36,7 @@ DATE_MAX = datetime(2014, 2, 28)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # ======================= MODEL DEFINITION =======================
-FORECAST_STEPS = 1  # 1 ngày tiếp theo
+FORECAST_STEPS = 48  # 1 ngày tiếp theo
 SEQ_LEN = 336        # 7 ngày quan sát
 
 class LSTMModel(nn.Module):
