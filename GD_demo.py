@@ -3,12 +3,10 @@ import pandas as pd
 import numpy as np
 import torch
 from torch import nn
-import joblib
 import zipfile
 import os
 import gc
 import time
-import requests
 from datetime import datetime, timedelta
 from huggingface_hub import hf_hub_download
 
@@ -35,8 +33,8 @@ DATE_MAX = datetime(2014, 2, 28)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # ======================= MODEL DEFINITION =======================
-FORECAST_STEPS = 48  # 1 ngày tiếp theo
-SEQ_LEN = 336        # 7 ngày quan sát
+FORECAST_STEPS = 48  # 1 ngày tiếp theo (24h * 2)
+SEQ_LEN = 336        # 7 ngày quan sát (7 * 24h * 2)
 
 class LSTMModel(nn.Module):
     def __init__(self, input_size=1, hidden_dim=64, output_dim=FORECAST_STEPS):
@@ -63,7 +61,6 @@ def clean_long_zero_sequences(series, threshold=6):
 @st.cache_data(show_spinner=False)
 def load_full_data(path):
     use_cols = ["LCLid", "stdorToU", "DateTime", "KWH/hh (per half hour)"]
-    # FIX: Sử dụng sep=','
     chunks = pd.read_csv(path, sep=',', usecols=use_cols, engine="c", chunksize=95000, on_bad_lines='skip')
     df_list = []
     for chunk in chunks:
@@ -79,7 +76,6 @@ def load_full_data(path):
     del df_list
     gc.collect()
     return df
-
 
 @st.cache_data(show_spinner=False)
 def load_available_households(df):
@@ -113,13 +109,14 @@ def load_all_models():
             full_model_dict[hid] = state_dict
     return full_model_dict
 
+# Load tất cả models vào RAM trước
 all_models = load_all_models()
 
 # ======================= STREAMLIT APP =======================
 st.set_page_config(page_title="Dự báo điện năng 12 giờ", layout="wide")
-st.title("\U0001F50B DỰ BÁO ĐIỆN NĂNG TIÊU THỤ ")
+st.title("🔋 DỰ BÁO ĐIỆN NĂNG TIÊU THỤ")
 
-with st.spinner("\U0001F4E6 Đang tải dữ liệu..."):
+with st.spinner("📦 Đang tải dữ liệu..."):
     full_df = load_full_data(DATA_PATH)
     households = load_available_households(full_df)
 
@@ -137,40 +134,36 @@ if st.button("Dự báo ngày tiếp theo"):
         st.warning("Vui lòng chọn ít nhất 1 hộ.")
         st.stop()
 
-    # Phần dự báo bên trong vòng lặp for:
+    for hid in selected_households:
+        st.subheader(f"Hộ: {hid}")
+        start = time.time()
 
-for hid in selected_households:
-    st.subheader(f"Hộ: {hid}")
-    start = time.time()
+        ts = get_household_data(full_df, hid, start_date, end_date)
+        if ts is None or len(ts) < SEQ_LEN:
+            st.warning("Không đủ dữ liệu để dự báo.")
+            continue
 
-    ts = get_household_data(full_df, hid, start_date, end_date)
-    if ts is None or len(ts) < SEQ_LEN:
-        st.warning("Không đủ dữ liệu để dự báo.")
-        continue
+        input_seq = prepare_sequence(ts)
+        if input_seq is None:
+            st.warning("Chuỗi đầu vào không hợp lệ.")
+            continue
 
-    input_seq = prepare_sequence(ts)
-    if input_seq is None:
-        st.warning("Chuỗi đầu vào không hợp lệ.")
-        continue
+        if hid not in all_models:
+            st.warning("Không tìm thấy mô hình đã huấn luyện cho hộ này.")
+            continue
 
-    # Load model
-    if hid not in all_models:
-        st.warning("Không tìm thấy mô hình đã huấn luyện.")
-        continue
+        model = LSTMModel().to(device)
+        model.load_state_dict(all_models[hid])
+        model.eval()
 
-    model = LSTMModel().to(device)
-    model.load_state_dict(all_models[hid])
-    model.eval()
+        input_tensor = torch.tensor(input_seq.reshape(1, SEQ_LEN, 1), dtype=torch.float32).to(device)
+        with torch.no_grad():
+            output = model(input_tensor).cpu().numpy().reshape(-1, 1)
+        preds = output.flatten()
 
-    # Dự báo (không cần scaler)
-    input_tensor = torch.tensor(input_seq.reshape(1, SEQ_LEN, 1), dtype=torch.float32).to(device)
-    with torch.no_grad():
-        output = model(input_tensor).cpu().numpy().reshape(-1, 1)
-    preds = output.flatten()
+        future_index = [ts.index[-1] + timedelta(minutes=30 * (i + 1)) for i in range(len(preds))]
+        forecast_df = pd.DataFrame({"Thời gian": future_index, "Dự báo (kWh)": preds}).set_index("Thời gian")
+        st.line_chart(forecast_df)
 
-    future_index = [ts.index[-1] + timedelta(minutes=30 * (i + 1)) for i in range(len(preds))]
-    forecast_df = pd.DataFrame({"Thời gian": future_index, "Dự báo (kWh)": preds}).set_index("Thời gian")
-    st.line_chart(forecast_df)
-    end = time.time()
-    st.success(f"Dự báo hoàn thành trong {end - start:.2f} giây.")
-
+        end = time.time()
+        st.success(f"Dự báo hoàn thành trong {end - start:.2f} giây.")
