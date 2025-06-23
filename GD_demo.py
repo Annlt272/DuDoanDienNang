@@ -16,7 +16,7 @@ import zipfile
 
 # Download data zip
 if not os.path.exists("datafull.zip"):
-    file_id = "1JTKRdO-24v4oUQXyPhRYGtlX8b1yaCZ5"
+    file_id = "1Y1p7wgYf6IY2303b5IxpkOcOGkYkmacM/"
     url = f"https://drive.google.com/uc?id={file_id}"
     gdown.download(url, "datafull.zip", quiet=False)
 
@@ -28,7 +28,7 @@ if not os.path.exists("model.zip"):
         zip_ref.extractall("model")  # giải nén vào thư mục model
 
 # ======================= CONFIGURATION =======================
-DATA_PATH = "DataSample.csv"
+DATA_PATH = "CC_LCL-FullData.csv"
 MODEL_DIR = "model"
 MAX_HOUSEHOLDS = 5
 DATE_MIN = datetime(2011, 12, 1)
