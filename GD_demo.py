@@ -26,7 +26,9 @@ if not os.path.exists("model"):
     os.makedirs("model")
 
 file_id = "1ZuC_LHycA0gcAHJ5D6XB8yLzT8ouNT87"  # <-- ID file model.zip của bạn
-gdown.download(id=file_id, output="model.zip", quiet=False)
+url = f"https://drive.google.com/uc?id={file_id}&confirm=t"
+gdown.download(url, "model.zip", quiet=False)
+
 with zipfile.ZipFile("model.zip", 'r') as zip_ref:
     zip_ref.extractall("model")  # giải nén thẳng vào thư mục model
 
