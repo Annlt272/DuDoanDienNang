@@ -1,36 +1,30 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-from datetime import datetime, timedelta
 import torch
 from torch import nn
+import joblib
+import zipfile
 import os
 import gc
 import time
-import joblib
-import gdown
-import zipfile
+import requests
+from datetime import datetime, timedelta
+from huggingface_hub import hf_hub_download
 
-# ======================= DOWNLOAD DATA FROM GOOGLE DRIVE =======================
+# ======================= DOWNLOAD DATA FROM HUGGING FACE =======================
 
-# Download data zip
+# Download datafull.zip
 if not os.path.exists("datafull.zip"):
-    file_id = "1Y1p7wgYf6IY2303b5IxpkOcOGkYkmacM"  # <-- ID file datafull.zip của bạn
-    url = f"https://drive.google.com/uc?id={file_id}&confirm=t"
-    gdown.download(url, "datafull.zip", quiet=False)
+    hf_hub_download(repo_id="An272/dudoandiennang", filename="datafull.zip", local_dir=".")
     with zipfile.ZipFile("datafull.zip", 'r') as zip_ref:
         zip_ref.extractall(".")
 
-# Download model zip
-if not os.path.exists("model"):
-    os.makedirs("model")
-
-file_id = "1ZuC_LHycA0gcAHJ5D6XB8yLzT8ouNT87"  # <-- ID file model.zip của bạn
-url = f"https://drive.google.com/uc?id={file_id}&confirm=t"
-gdown.download(url, "model.zip", quiet=False)
-
-with zipfile.ZipFile("model.zip", 'r') as zip_ref:
-    zip_ref.extractall("model")  # giải nén thẳng vào thư mục model
+# Download model.zip
+if not os.path.exists("model.zip"):
+    hf_hub_download(repo_id="An272/dudoandiennang", filename="model.zip", local_dir=".")
+    with zipfile.ZipFile("model.zip", 'r') as zip_ref:
+        zip_ref.extractall("model")
 
 # ======================= CONFIGURATION =======================
 DATA_PATH = "CC_LCL-FullData.csv"
@@ -45,7 +39,7 @@ FORECAST_STEPS = 48  # 1 ngày tiếp theo
 SEQ_LEN = 336        # 7 ngày quan sát
 
 class LSTMModel(nn.Module):
-    def __init__(self, input_size=1, hidden_dim=64, output_dim=24):
+    def __init__(self, input_size=1, hidden_dim=64, output_dim=FORECAST_STEPS):
         super().__init__()
         self.lstm = nn.LSTM(input_size, hidden_dim, batch_first=True)
         self.dropout = nn.Dropout(0.2)
@@ -68,8 +62,8 @@ def clean_long_zero_sequences(series, threshold=6):
 
 @st.cache_data(show_spinner=False)
 def load_full_data(path):
-    use_cols = ["LCLid", "stdorToU", "DateTime", "KWH/hh (per half hour)"]
-    chunks = pd.read_csv(path, sep=';', usecols=use_cols, engine="c", chunksize=95_000, on_bad_lines='skip')
+    use_cols = ["LCLid", "DateTime", "KWH/hh (per half hour)"]
+    chunks = pd.read_csv(path, sep=';', usecols=use_cols, engine="c", chunksize=95000, on_bad_lines='skip')
     df_list = []
     for chunk in chunks:
         chunk.columns = chunk.columns.str.strip()
@@ -106,7 +100,6 @@ def prepare_sequence(series):
         return None
     return values[-SEQ_LEN:]
 
-# ======================= LOAD MODELS FROM MULTI-PT =======================
 @st.cache_data(show_spinner=False)
 def load_all_models():
     model_files = [f for f in os.listdir(MODEL_DIR) if f.endswith(".pt")]
@@ -119,15 +112,17 @@ def load_all_models():
     return full_model_dict
 
 all_models = load_all_models()
-# ======================= STREAMLIT APP =======================
-st.set_page_config(page_title="Dự báo điện năng", layout="wide")
-st.title("🔋 DỰ BÁO ĐIỆN NĂNG TIÊU THỤ")
 
-with st.spinner("📦 Đang tải dữ liệu..."):
+# ======================= STREAMLIT APP =======================
+st.set_page_config(page_title="Dự báo điện năng 12 giờ", layout="wide")
+st.title("\U0001F50B DỰ BÁO ĐIỆN NĂNG TIÊU THỤ ")
+
+with st.spinner("\U0001F4E6 Đang tải dữ liệu..."):
     full_df = load_full_data(DATA_PATH)
     households = load_available_households(full_df)
 
 selected_households = st.multiselect("Chọn hộ gia đình", households, max_selections=MAX_HOUSEHOLDS)
+
 start_date = st.date_input("Từ ngày", datetime(2011, 12, 1), min_value=DATE_MIN, max_value=DATE_MAX)
 end_date = st.date_input("Đến ngày", datetime(2014, 2, 28), min_value=DATE_MIN, max_value=DATE_MAX)
 
@@ -154,27 +149,29 @@ if st.button("Dự báo ngày tiếp theo"):
             st.warning("Chuỗi đầu vào không hợp lệ.")
             continue
 
+        # Load model
         if hid not in all_models:
             st.warning("Không tìm thấy mô hình đã huấn luyện.")
             continue
 
-        model = LSTMModel(output_dim=FORECAST_STEPS).to(device)
+        model = LSTMModel().to(device)
         model.load_state_dict(all_models[hid])
         model.eval()
 
+        # Load scaler
         scaler_path = os.path.join(MODEL_DIR, "scaler", f"{hid}_scaler.save")
         if not os.path.exists(scaler_path):
             st.warning("Không tìm thấy scaler.")
             continue
-
         scaler = joblib.load(scaler_path)
+
+        # Dự báo
         scaled = scaler.transform(input_seq)
         input_tensor = torch.tensor(scaled.reshape(1, SEQ_LEN, 1), dtype=torch.float32).to(device)
-
         with torch.no_grad():
             output = model(input_tensor).cpu().numpy().reshape(-1, 1)
-
         preds = scaler.inverse_transform(output).flatten()
+
         future_index = [ts.index[-1] + timedelta(minutes=30 * (i + 1)) for i in range(len(preds))]
         forecast_df = pd.DataFrame({"Thời gian": future_index, "Dự báo (kWh)": preds}).set_index("Thời gian")
         st.line_chart(forecast_df)
