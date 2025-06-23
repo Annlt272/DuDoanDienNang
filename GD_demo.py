@@ -106,15 +106,24 @@ def prepare_sequence(series):
 
 # ======================= LOAD MODELS FROM MULTI-PT =======================
 @st.cache_data(show_spinner=False)
-def load_all_models():
-    model_files = [f for f in os.listdir(MODEL_DIR) if f.endswith(".pt")]
-    full_model_dict = {}
-    for file in model_files:
-        file_path = os.path.join(MODEL_DIR, file)
-        state_dict_all = torch.load(file_path, map_location=device)
-        for hid, state_dict in state_dict_all.items():
-            full_model_dict[hid] = state_dict
-    return full_model_dict
+def load_full_data(path):
+    use_cols = ["LCLid", "DateTime", "KWH/hh (per half hour)"]
+    chunks = pd.read_csv(path, sep=',', usecols=use_cols, engine="c", chunksize=95_000, on_bad_lines='skip')
+    df_list = []
+    for chunk in chunks:
+        chunk.columns = chunk.columns.str.strip()
+        chunk["KWH/hh (per half hour)"] = pd.to_numeric(
+            chunk["KWH/hh (per half hour)"].astype(str).str.replace(",", "."), errors='coerce')
+        chunk["DateTime"] = pd.to_datetime(chunk["DateTime"], dayfirst=True, errors='coerce')
+        chunk.dropna(subset=["LCLid", "DateTime", "KWH/hh (per half hour)"], inplace=True)
+        chunk = chunk[(chunk["DateTime"] >= DATE_MIN) & (chunk["DateTime"] <= DATE_MAX)]
+        df_list.append(chunk)
+    df = pd.concat(df_list, ignore_index=True)
+    df.set_index("DateTime", inplace=True)
+    del df_list
+    gc.collect()
+    return df
+
 
 all_models = load_all_models()
 
