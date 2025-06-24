@@ -14,7 +14,7 @@ from huggingface_hub import hf_hub_download
 
 # Download datafull.zip
 if not os.path.exists("datafull.zip"):
-    hf_hub_download(repo_id="An272/dudoandiennang", filename="datafull.zip", local_dir=".")
+    hf_hub_download(repo_id="An272/dudoandiennang", filename="datafull.zip",repo_type="dataset" local_dir=".")
     with zipfile.ZipFile("datafull.zip", 'r') as zip_ref:
         zip_ref.extractall(".")
 
